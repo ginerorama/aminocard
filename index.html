@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clasificador de Aminoácidos</title>
+    <!-- Carga de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Carga de Tone.js para la generación de audio -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <style>
+        /* Estilos personalizados */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Fondo suave */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden; 
+        }
+        
+        #game-container {
+            width: 100%;
+            max-width: 1200px;
+            height: 95vh; 
+            display: grid;
+            grid-template-rows: 1fr auto; 
+            gap: 1rem;
+            padding: 1rem;
+            position: relative;
+        }
+
+        #drop-area {
+            position: relative;
+            background-color: #ffffff;
+            border: 2px solid #cbd5e1;
+            border-radius: 12px;
+            overflow: hidden; 
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            touch-action: none; 
+        }
+
+        .category-box {
+            height: 120px;
+            cursor: pointer;
+            transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border-radius: 8px;
+            text-align: center;
+            user-select: none;
+            color: white;
+            padding: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.15); 
+        }
+
+        /* --- Estilos de Flash de Feedback --- */
+        .box-flash-success {
+            box-shadow: 0 0 0 8px rgba(34, 197, 94, 0.9) !important;
+            transform: scale(1.05) !important;
+        }
+
+        .box-flash-error {
+            box-shadow: 0 0 0 8px rgba(239, 68, 68, 0.9) !important;
+            transform: scale(1.05) rotate(-1deg) !important;
+        }
+        
+        /* Carta de Aminoácido (Neutro en el juego) */
+        .aa-card {
+            position: absolute; 
+            width: 120px;
+            height: 160px;
+            background-color: white; /* FONDO BLANCO/NEUTRO EN EL JUEGO */
+            border: 2px solid #9ca3af; 
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            transition: opacity 0.5s;
+            cursor: grab;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            z-index: 10;
+            touch-action: none; 
+        }
+        
+        .aa-card.dragging {
+            box-shadow: 0 10px 30px rgba(75, 85, 99, 0.8); 
+            transform: scale(1.1) rotate(2deg);
+            z-index: 1000; 
+            cursor: grabbing;
+            border-color: #4b5563; 
+            transition: none !important; 
+        }
+        
+        .aa-card .name {
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 4px;
+            text-align: center;
+        }
+
+        .aa-card .structure-svg {
+            width: 100px;
+            height: 100px;
+            padding: 4px;
+        }
+
+        /* --- Estilos de la Tabla de Referencia (Integrada) --- */
+        
+        /* Modal Overlay */
+        #reference-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.95);
+            display: none; /* Controlado por JS */
+            align-items: center;
+            justify-content: center;
+            z-index: 1100;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        #reference-content {
+            background-color: #ffffff;
+            border-radius: 16px;
+            padding: 2rem;
+            width: 95%;
+            max-width: 1000px;
+            max-height: 95vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+            position: relative;
+        }
+
+        /* Estilos de la Carta de Referencia (SÍ lleva color) */
+        .aa-reference-card {
+            width: 120px;
+            height: 160px;
+            cursor: default;
+            transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+            border-radius: 8px;
+            position: relative; /* FUNDAMENTAL: Crea un contexto de apilamiento */
+            z-index: 10; /* Z-index inicial bajo */
+            margin: 0 auto; /* Centra las cartas en el grid */
+        }
+        
+        /* CORRECCIÓN Z-INDEX: Al hacer hover, la carta completa salta al frente. */
+        .aa-reference-card:hover {
+            z-index: 100; /* Asegura que la carta y su pop-up se dibujen sobre las vecinas */
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
+            transform: scale(1.05);
+        }
+
+        /* Tooltip de Referencia - CORRECCIÓN DE Z-INDEX */
+        .info-menu {
+            position: absolute;
+            top: 50%;
+            left: 100%; 
+            transform: translateY(-50%);
+            margin-left: 10px; 
+            padding: 12px;
+            width: 250px;
+            background-color: #1f2937; 
+            color: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s, visibility 0.3s;
+            z-index: 2000; /* Z-index alto dentro de su contexto de apilamiento */
+            border: 1px solid #4b5563;
+        }
+
+        .aa-reference-card:hover .info-menu {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .info-menu strong { color: #6366f1; margin-right: 8px; }
+        .aa-reference-card .content {
+            border: 2px solid #9ca3af;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            width: 100%;
+            height: 100%;
+        }
+
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            #game-container {
+                height: auto;
+                min-height: 95vh;
+                grid-template-rows: 1fr auto; 
+                padding: 0.5rem;
+            }
+            .category-box { height: 90px; padding: 0.25rem; }
+            .category-name { font-size: 0.9rem; }
+            .category-hint { font-size: 0.6rem; }
+            .aa-card { width: 90px; height: 120px; border-width: 1px; }
+            .aa-card .structure-svg { width: 70px; height: 70px; padding: 4px; }
+            #overlay-title { font-size: 2.5rem; }
+            #overlay-message { font-size: 1rem; }
+            .fixed.bottom-0 { font-size: 0.6rem; }
+            
+            /* Modal en móvil */
+            #reference-content { padding: 1rem; }
+            .aa-reference-card { width: 100px; height: 140px; }
+            .info-menu {
+                left: 0;
+                top: 100%;
+                transform: none;
+                margin-top: 10px;
+                width: 100%;
+                max-width: none;
+                margin-left: 0;
+                position: relative; /* Ajuste para que se vea bien en el scroll del móvil */
+                z-index: 2000; /* Mantiene el z-index alto */
+            }
+        }
+    </style>
+</head>
+<body class="p-4">
+
+<div id="game-container">
+    
+    <!-- 1. Marcador, Temporizador y Botones (Fijo en la parte superior) -->
+    <div class="fixed top-0 left-0 right-0 bg-white p-3 shadow-md z-50 flex justify-between items-center rounded-b-xl border-b-4 border-indigo-500 px-6">
+        <div class="flex space-x-4 md:space-x-8 items-center">
+            <div class="text-lg font-bold text-gray-700">Puntuación: <span id="score" class="text-indigo-600">0</span></div>
+            <div class="text-lg font-bold text-gray-700">Tiempo: <span id="timer" class="text-red-600">60s</span></div>
+            <div class="text-lg font-bold text-gray-700 hidden sm:block whitespace-nowrap">Racha Actual: <span id="streak" class="text-pink-600">0</span></div>
+            <div class="text-lg font-bold text-gray-700 hidden sm:block whitespace-nowrap">Racha Máxima: <span id="max-streak" class="text-purple-600">0</span></div>
+        </div>
+        <div class="flex space-x-3">
+            <!-- Botones de control de juego (solo visibles durante el juego) -->
+            <button id="pause-button" class="px-4 py-1 text-base font-bold bg-gray-500 hover:bg-gray-600 text-white rounded-md shadow transition duration-150" style="display: none;">
+                Pausar
+            </button>
+            <button id="restart-button" class="px-4 py-1 text-base font-bold bg-red-500 hover:bg-red-600 text-white rounded-md shadow transition duration-150" style="display: none;">
+                Reiniciar
+            </button>
+        </div>
+    </div>
+
+    <!-- 2. Área de Caída -->
+    <div id="drop-area" class="mt-[64px]"> 
+        <!-- Los aminoácidos caerán aquí continuamente -->
+    </div>
+
+    <!-- 3. Cajas de Clasificación (Objetivos) -->
+    <div id="categories-grid" class="grid grid-cols-5 gap-3">
+        <!-- Ácidos -->
+        <div id="Acidos" class="category-box bg-red-600 hover:bg-red-700" data-category="Acidos" data-color="#dc2626">
+            <span class="category-name">Ácidos</span>
+            <span class="category-hint text-xs">(Aspartato, Glutamato)</span>
+        </div>
+        <!-- Básicos -->
+        <div id="Basicos" class="category-box bg-blue-600 hover:bg-blue-700" data-category="Basicos" data-color="#2563eb">
+            <span class="category-name">Básicos</span>
+            <span class="category-hint text-xs">(Lisina, Arginina, Histidina)</span>
+        </div>
+        <!-- Polares sin Carga -->
+        <div id="PolaresSinCarga" class="category-box bg-green-600 hover:bg-green-700" data-category="PolaresSinCarga" data-color="#16a34a">
+            <span class="category-name">Polares sin Carga</span>
+            <span class="category-hint text-xs">(Serina, Treonina, Cisteína, Asparagina, Glutamina)</span>
+        </div>
+        <!-- Aromáticos -->
+        <div id="Aromaticos" class="category-box bg-purple-600 hover:bg-purple-700" data-category="Aromaticos" data-color="#9333ea">
+            <span class="category-name">Polares Aromáticos</span>
+            <span class="category-hint text-xs">(Fenilalanina, Tirosina, Triptófano)</span>
+        </div>
+        <!-- Alifáticos -->
+        <div id="Alifaticos" class="category-box bg-yellow-600 hover:bg-yellow-700" data-category="Alifaticos" data-color="#ca8a04">
+            <span class="category-name">Alifáticos</span>
+            <span class="category-hint text-xs">(Glicina, Alanina, Valina, Leucina, Isoleucina, Metionina, Prolina)</span>
+        </div>
+    </div>
+
+    <!-- 4. Overlay de Inicio/Fin del Juego/Pausa -->
+    <div id="overlay" class="absolute inset-0 bg-gray-900 bg-opacity-90 flex flex-col justify-center items-center z-50 rounded-xl">
+        
+        <div id="overlay-main-content" class="p-8 w-full max-w-lg text-center flex flex-col justify-center items-center">
+            <h1 id="overlay-title" class="text-4xl md:text-6xl font-extrabold text-white mb-6 animate-pulse">Clasificador de Aminoácidos</h1>
+            
+            <p id="overlay-message" class="text-xl text-gray-200 mb-6 max-w-lg text-center mx-auto">Clasifica un único aminoácido a la vez arrastrándolo a la caja correcta. Ganas 1 punto por acierto, y 1 punto extra por cada múltiplo de 3 que alcances en tu <span class="font-bold text-pink-400">Racha Actual</span>. Pierdes 1 punto si fallas o se cae el aminoácido.</p>
+            
+            <!-- Controles de Dificultad -->
+            <div id="difficulty-selection" class="flex flex-col items-center mb-8">
+                <label for="difficulty" class="text-xl font-bold text-white mb-3">Selecciona Dificultad:</label>
+                <select id="difficulty" class="p-3 text-lg rounded-lg shadow-md bg-white text-gray-800 border-none focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
+                    <option value="easy">Fácil</option>
+                    <option value="medium">Normal</option>
+                    <option value="hard">Difícil</option>
+                </select>
+            </div>
+            
+            <!-- CONTENEDOR DE BOTONES (Start y Referencia) -->
+            <div class="flex flex-col space-y-4 w-full px-4 sm:px-0 sm:w-2/3">
+                <button id="start-button" class="w-full py-4 text-2xl font-bold bg-indigo-500 hover:bg-indigo-600 text-white rounded-full shadow-lg transition duration-200 transform hover:scale-105">
+                    ¡Comenzar Juego!
+                </button>
+                <!-- BOTÓN DE REFERENCIA MOVIDO AQUÍ -->
+                <button id="reference-button" class="w-full py-2 text-lg font-bold bg-gray-600 hover:bg-gray-700 text-white rounded-full shadow transition duration-200 transform hover:scale-105">
+                    Tabla de Referencia (Ayuda)
+                </button>
+            </div>
+            <!-- FIN CONTENEDOR DE BOTONES -->
+
+        </div>
+    </div>
+
+    <!-- 5. Mensaje de retroalimentación flotante -->
+    <div id="feedback" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-4xl font-extrabold p-4 rounded-lg shadow-2xl z-50 opacity-0 transition-opacity duration-300 pointer-events-none"></div>
+    
+    <!-- 6. Modal de la Tabla de Referencia (NUEVO) -->
+    <div id="reference-overlay" style="display: none;">
+        <div id="reference-content">
+            <h2 class="text-3xl font-extrabold text-indigo-700 text-center mb-6 border-b-4 border-indigo-500 pb-3">
+                Tabla de Referencia de Aminoácidos
+            </h2>
+            <p class="text-center text-gray-600 mb-8">
+                Pasa el ratón (o toca) sobre cualquier carta para ver sus propiedades bioquímicas detalladas.
+            </p>
+            <div id="amino-acid-cards-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 justify-center">
+                <!-- Cartas de Referencia se cargan aquí -->
+            </div>
+            <button id="close-reference-button" class="mt-8 px-6 py-2 text-lg font-bold bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg transition duration-200 transform hover:scale-105 w-full">
+                Cerrar y Volver
+            </button>
+        </div>
+    </div>
+
+</div>
+
+<!-- 7. Pie de Página con Créditos y Licencia -->
+<div class="fixed bottom-0 left-0 right-0 p-1 text-center bg-gray-100 text-gray-500 text-xs z-40 border-t border-gray-300">
+    <p>El juego es con licencia <span class="font-semibold">CC</span> y ha sido creado por Joaquín Giner Lamia</p>
+</div>
+
+<script type="module">
+    // --- Configuración y Datos del Juego ---
+
+    const soundVolume = 0.2; 
+    const dbVolume = Tone.gainToDb(soundVolume); 
+    
+    const GAME_DURATION = 60; 
+
+    // DATOS DE AMINOÁCIDOS (Colores pastel ÚNICOS por clase)
+    // Estos colores SÓLO se usan para la Tabla de Referencia.
+    const COLOR_ACIDOS = '#ffb3b3';         // Rojo Pastel
+    const COLOR_BASICOS = '#a3d9ff';        // Azul Pastel
+    const COLOR_POLARES = '#b3ffb3';        // Verde Pastel
+    const COLOR_AROMATICOS = '#e0b3ff';     // Morado Pastel
+    const COLOR_ALIFATICOS = '#ffffcc';     // Amarillo Pastel
+    
+    const AMINO_ACIDS = [
+        // Ácidos
+        { name: 'Aspartato', code: 'D', code3: 'Asp', category: 'Acidos', color: COLOR_ACIDOS, iconType: 'charged_neg', mw: 133.1, pI: 2.77 },
+        { name: 'Glutamato', code: 'E', code3: 'Glu', category: 'Acidos', color: COLOR_ACIDOS, iconType: 'charged_neg', mw: 147.1, pI: 3.22 },
+        // Básicos
+        { name: 'Lisina', code: 'K', code3: 'Lys', category: 'Basicos', color: COLOR_BASICOS, iconType: 'charged_pos', mw: 146.2, pI: 9.74 },
+        { name: 'Arginina', code: 'R', code3: 'Arg', category: 'Basicos', color: COLOR_BASICOS, iconType: 'charged_pos', mw: 174.2, pI: 10.76 },
+        { name: 'Histidina', code: 'H', code3: 'His', category: 'Basicos', color: COLOR_BASICOS, iconType: 'charged_pos', mw: 155.2, pI: 7.59 },
+        // Polares sin Carga
+        { name: 'Serina', code: 'S', code3: 'Ser', category: 'PolaresSinCarga', color: COLOR_POLARES, iconType: 'polar', mw: 105.1, pI: 5.68 },
+        { name: 'Treonina', code: 'T', code3: 'Thr', category: 'PolaresSinCarga', color: COLOR_POLARES, iconType: 'polar', mw: 119.1, pI: 5.64 },
+        { name: 'Cisteína', code: 'C', code3: 'Cys', category: 'PolaresSinCarga', color: COLOR_POLARES, iconType: 'polar', mw: 121.2, pI: 5.07 },
+        { name: 'Asparagina', code: 'N', code3: 'Asn', category: 'PolaresSinCarga', color: COLOR_POLARES, iconType: 'polar', mw: 132.1, pI: 5.41 },
+        { name: 'Glutamina', code: 'Q', code3: 'Gln', category: 'PolaresSinCarga', color: COLOR_POLARES, iconType: 'polar', mw: 146.1, pI: 5.65 },
+        // Aromáticos
+        { name: 'Fenilalanina', code: 'F', code3: 'Phe', category: 'Aromaticos', color: COLOR_AROMATICOS, iconType: 'aromatic', mw: 165.2, pI: 5.48 },
+        { name: 'Tirosina', code: 'Y', code3: 'Tyr', category: 'Aromaticos', color: COLOR_AROMATICOS, iconType: 'aromatic', mw: 181.2, pI: 5.66 },
+        { name: 'Triptófano', code: 'W', code3: 'Trp', category: 'Aromaticos', color: COLOR_AROMATICOS, iconType: 'aromatic', mw: 204.2, pI: 5.89 },
+        // Alifáticos
+        { name: 'Glicina', code: 'G', code3: 'Gly', category: 'Alifaticos', color: COLOR_ALIFATICOS, iconType: 'aliphatic', mw: 75.1, pI: 6.06 },
+        { name: 'Alanina', code: 'A', code3: 'Ala', category: 'Alifaticos', color: COLOR_ALIFATICOS, iconType: 'aliphatic', mw: 89.1, pI: 6.00 },
+        { name: 'Valina', code: 'V', code3: 'Val', category: 'Alifaticos', color: COLOR_ALIFATICOS, iconType: 'aliphatic', mw: 117.1, pI: 5.97 },
+        { name: 'Leucina', code: 'L', code3: 'Leu', category: 'Alifaticos', color: COLOR_ALIFATICOS, iconType: 'aliphatic', mw: 131.2, pI: 5.98 },
+        { name: 'Isoleucina', code: 'I', code3: 'Ile', category: 'Alifaticos', color: COLOR_ALIFATICOS, iconType: 'aliphatic', mw: 131.2, pI: 6.02 },
+        { name: 'Prolina', code: 'P', code3: 'Pro', category: 'Alifaticos', color: COLOR_ALIFATICOS, iconType: 'aliphatic', mw: 115.1, pI: 6.30 }, 
+        { name: 'Metionina', code: 'M', code3: 'Met', category: 'Alifaticos', color: COLOR_ALIFATICOS, iconType: 'aliphatic', mw: 149.2, pI: 5.74 },
+    ];
+    
+    // --- Variables del Juego ---
+    let score = 0;
+    let timeLeft = GAME_DURATION;
+    let streak = 0; 
+    let maxStreak = 0; 
+    let gameInterval;   
+    let dropInterval;   
+    let spawnerInterval; 
+    let lastTime = 0; 
+    let isGameRunning = false;
+    let isGamePaused = false; 
+    let isReferenceOpen = false; // Nueva variable para el modal de referencia
+    
+    let lastSpawnPositionX = -1; 
+    
+    const BASE_DROP_SPEED = 60; 
+    let currentDropSpeed = BASE_DROP_SPEED; 
+
+    const DIFFICULTY_SETTINGS = {
+        'easy': 1.0,    
+        'medium': 1.2,  
+        'hard': 2.5     
+    };
+    
+    let dragState = {
+        isDragging: false,
+        card: null, 
+        offsetX: 0,
+        offsetY: 0,
+    };
+
+    // --- Audio Setup (Tone.js) ---
+    let successSynth;
+    let crashFailSynth; 
+    let mismatchSynth; 
+
+    function initAudio() {
+        Tone.Destination.volume.value = dbVolume;
+
+        successSynth = new Tone.Synth({
+            oscillator: { type: "triangle" }, 
+            envelope: { attack: 0.005, decay: 0.2, sustain: 0.0, release: 0.3 }
+        }).toDestination();
+
+        crashFailSynth = new Tone.FMSynth({
+            harmonicity: 3.0, 
+            modulationIndex: 10, 
+            envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.2 },
+            modulationEnvelope: { attack: 0.1, decay: 0.2, sustain: 0, release: 0.05 }
+        }).toDestination();
+        
+        mismatchSynth = new Tone.Synth({
+            oscillator: { type: "square" }, 
+            envelope: { attack: 0.01, decay: 0.1, sustain: 0.0, release: 0.2 }
+        }).toDestination();
+    }
+
+    function playSuccessSound() {
+        if (successSynth) {
+            const notes = ["C6", "E6", "G6"];
+            const now = Tone.now();
+            successSynth.triggerAttackRelease(notes[0], "32n", now);
+            successSynth.triggerAttackRelease(notes[1], "32n", now + 0.05);
+            successSynth.triggerAttackRelease(notes[2], "16n", now + 0.1); 
+        }
+    }
+
+    function playMismatchSound() {
+        if (mismatchSynth) {
+            const now = Tone.now();
+            mismatchSynth.triggerAttackRelease("D5", "32n", now);
+            mismatchSynth.triggerAttackRelease("C4", "16n", now + 0.1); 
+        }
+    }
+
+    function playCrashSound() {
+        if (crashFailSynth) {
+            crashFailSynth.triggerAttackRelease("D4", "0.2"); 
+        }
+    }
+
+    // --- Referencias del DOM ---
+    const dropArea = document.getElementById('drop-area');
+    const scoreDisplay = document.getElementById('score');
+    const timerDisplay = document.getElementById('timer');
+    const overlay = document.getElementById('overlay');
+    const overlayMainContent = document.getElementById('overlay-main-content'); 
+    const overlayTitle = document.getElementById('overlay-title');
+    const overlayMessage = document.getElementById('overlay-message');
+    const startButton = document.getElementById('start-button');
+    const difficultySelect = document.getElementById('difficulty'); 
+    const categoryBoxes = Array.from(document.querySelectorAll('.category-box'));
+    const feedbackEl = document.getElementById('feedback');
+    const pauseButton = document.getElementById('pause-button');
+    const restartButton = document.getElementById('restart-button');
+    const streakDisplay = document.getElementById('streak');
+    const maxStreakDisplay = document.getElementById('max-streak'); 
+    const difficultySelectionDiv = document.getElementById('difficulty-selection');
+    const referenceButton = document.getElementById('reference-button'); 
+    const referenceOverlay = document.getElementById('reference-overlay'); // Nuevo
+    const referenceCardsGrid = document.getElementById('amino-acid-cards-grid'); // Nuevo
+    const closeReferenceButton = document.getElementById('close-reference-button'); // Nuevo
+    
+    
+    // --- Funciones de Utilidad y UI ---
+    
+    const NEUTRAL_COLOR = '#4a5568'; // Color para gráficos e íconos
+
+    function showFeedback(text, isPositive) {
+        feedbackEl.textContent = text;
+        
+        feedbackEl.className = `fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-4xl font-extrabold p-4 rounded-lg shadow-2xl z-50 transition-opacity duration-300 pointer-events-none ${isPositive ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`;
+        feedbackEl.style.opacity = 1;
+
+        setTimeout(() => {
+            feedbackEl.style.opacity = 0;
+        }, 800);
+    }
+    
+    function flashBox(box, isPositive) {
+        const className = isPositive ? 'box-flash-success' : 'box-flash-error';
+        box.classList.add(className);
+        
+        setTimeout(() => {
+            box.classList.remove(className);
+        }, 300); 
+    }
+
+    /**
+     * Genera un SVG simple basado en el tipo de aminoácido usando un color neutro.
+     */
+    function getAminoAcidSVG(iconType) {
+        // Usa un color neutro para los gráficos
+        const color = NEUTRAL_COLOR;
+        const baseStyle = `fill:none; stroke:${color}; stroke-width:4; stroke-linecap:round; stroke-linejoin:round;`;
+        let svgContent = '';
+
+        switch (iconType) {
+            case 'charged_neg':
+                svgContent = `<circle cx="50" cy="50" r="40" style="${baseStyle}"/>
+                              <line x1="30" y1="50" x2="70" y2="50" style="stroke:${color}; stroke-width:6;"/>`;
+                break;
+            case 'charged_pos':
+                svgContent = `<circle cx="50" cy="50" r="40" style="${baseStyle}"/>
+                              <line x1="30" y1="50" x2="70" y2="50" style="stroke:${color}; stroke-width:6;"/>
+                              <line x1="50" y1="30" x2="50" y2="70" style="stroke:${color}; stroke-width:6;"/>`;
+                break;
+            case 'polar':
+                svgContent = `<polygon points="50,10 90,90 10,90" style="${baseStyle}"/>
+                              <line x1="50" y1="10" x2="50" y2="90" style="stroke:${color}; stroke-width:2;"/>`;
+                break;
+            case 'aromatic':
+                svgContent = `<polygon points="50,10 90,30 90,70 50,90 10,70 10,30" style="${baseStyle}"/>
+                              <circle cx="50" cy="50" r="15" style="fill:${color}40; stroke:${color}; stroke-width:2;"/>`;
+                break;
+            case 'aliphatic':
+            default:
+                svgContent = `<polyline points="20,80 40,40 60,80 80,40" style="${baseStyle}"/>`;
+                break;
+        }
+
+        return `<svg viewBox="0 0 100 100" class="structure-svg">${svgContent}</svg>`;
+    }
+
+    // Carta para el JUEGO (FONDO NEUTRO)
+    function createAminoAcidCard(aminoAcid) {
+        const card = document.createElement('div');
+        card.className = 'aa-card';
+        card.setAttribute('data-category', aminoAcid.category);
+        card.style.top = '0px'; 
+        
+        // NO APLICA color, usa el blanco del CSS
+
+        card.innerHTML = `
+            <div class="name" style="color: ${NEUTRAL_COLOR}; border-bottom: 1px solid ${NEUTRAL_COLOR}; padding-bottom: 2px;">${aminoAcid.name}</div>
+            ${getAminoAcidSVG(aminoAcid.iconType)}
+            <div class="code text-2xl font-bold" style="color: ${NEUTRAL_COLOR};">${aminoAcid.code}</div>
+        `;
+        
+        card.addEventListener('mousedown', startDrag);
+        card.addEventListener('touchstart', startDrag);
+
+        return card;
+    }
+    
+    // Carta para la REFERENCIA (SÍ lleva color)
+    function createReferenceCard(aminoAcid) {
+        const cardWrapper = document.createElement('div');
+        cardWrapper.className = 'aa-reference-card';
+        
+        // Aplica el color de fondo pastel uniforme A LA REFERENCIA
+        cardWrapper.style.backgroundColor = aminoAcid.color;
+
+        const categoryName = aminoAcid.category.replace(/([A-Z])/g, ' $1').trim(); 
+
+        // Contenido del tooltip
+        const menuContent = `
+            <div class="title">${aminoAcid.name}</div>
+            <p><strong>Categoría:</strong> <span class="value">${categoryName}</span></p>
+            <p><strong>Peso Molecular:</strong> <span class="value">${aminoAcid.mw.toFixed(1)} g/mol</span></p>
+            <p><strong>Punto Isoeléctrico (pI):</strong> <span class="value">${aminoAcid.pI.toFixed(2)}</span></p>
+            <p><strong>Código (3 Letras):</strong> <span class="value">${aminoAcid.code3}</span></p>
+            <p><strong>Código (1 Letra):</strong> <span class="value">${aminoAcid.code}</span></p>
+        `;
+
+        cardWrapper.innerHTML = `
+            <div class="content">
+                <div class="name font-bold text-sm" style="color: ${NEUTRAL_COLOR}; border-bottom: 1px solid ${NEUTRAL_COLOR}; padding-bottom: 2px;">${aminoAcid.name}</div>
+                ${getAminoAcidSVG(aminoAcid.iconType)}
+                <div class="code text-2xl font-bold" style="color: ${NEUTRAL_COLOR};">${aminoAcid.code}</div>
+            </div>
+            <div class="info-menu">
+                ${menuContent}
+            </div>
+        `;
+
+        return cardWrapper;
+    }
+    
+    // Función para construir la tabla de referencia
+    function buildReferenceTable() {
+        if (referenceCardsGrid.children.length === 0) {
+            AMINO_ACIDS.forEach(aa => {
+                const card = createReferenceCard(aa);
+                referenceCardsGrid.appendChild(card);
+            });
+        }
+    }
+    
+    // --- Lógica del Juego (omitted for brevity, remains the same) ---
+    
+    function spawnAminoAcid() {
+        if (!isGameRunning || isGamePaused) return;
+
+        const randomIndex = Math.floor(Math.random() * AMINO_ACIDS.length);
+        const aminoAcid = AMINO_ACIDS[randomIndex];
+        
+        const cardWidth = 120; 
+        const minOffset = 20; 
+        const maxLeft = dropArea.clientWidth - cardWidth;
+        
+        let newX;
+
+        if (lastSpawnPositionX === -1) {
+            newX = Math.random() * maxLeft;
+        } else {
+            const forbiddenStart = Math.max(0, lastSpawnPositionX - cardWidth - minOffset);
+            const forbiddenEnd = Math.min(maxLeft, lastSpawnPositionX + cardWidth + minOffset); 
+            
+            const range1Size = forbiddenStart;
+            const range2Start = forbiddenEnd;
+            const range2Size = Math.max(0, maxLeft - range2Start);
+            
+            const totalAvailableSpace = range1Size + range2Size;
+            
+            if (totalAvailableSpace > 0) {
+                const randomPoint = Math.random() * totalAvailableSpace;
+                
+                if (randomPoint < range1Size) {
+                    newX = randomPoint;
+                } else {
+                    newX = range2Start + (randomPoint - range1Size);
+                }
+            } else {
+                newX = Math.random() * maxLeft;
+            }
+        }
+        
+        newX = Math.max(0, Math.min(newX, maxLeft));
+
+        const newCard = createAminoAcidCard(aminoAcid);
+        newCard.style.left = `${newX}px`;
+        dropArea.appendChild(newCard);
+        
+        lastSpawnPositionX = newX;
+    }
+    
+    function checkCardDrop(card) {
+        const cardY = parseFloat(card.style.top);
+        const hitZone = dropArea.clientHeight - card.clientHeight;
+
+        if (cardY >= hitZone) {
+            updateScore(false, '¡Se cayó!');
+            card.remove(); 
+            return true;
+        }
+        return false;
+    }
+    
+    function updateScore(success, feedbackText) {
+        const BASE_POINTS = 1;
+        
+        if (success) {
+            streak++;
+            maxStreak = Math.max(maxStreak, streak); 
+            maxStreakDisplay.textContent = maxStreak; 
+            
+            const streakBonus = Math.floor(streak / 3); 
+            const pointsEarned = BASE_POINTS + streakBonus;
+            score += pointsEarned;
+
+            const bonusText = streakBonus > 0 ? ` (+${streakBonus} Bonus)` : ``;
+            showFeedback(`+${pointsEarned} ¡Correcto!${bonusText}`, true);
+            playSuccessSound(); 
+
+        } else {
+            streak = 0;
+            score = Math.max(0, score - 1); 
+            showFeedback(`-1 (${feedbackText})`, false);
+            
+            if (feedbackText === '¡Se cayó!') {
+                playCrashSound(); 
+            } else {
+                playMismatchSound(); 
+            }
+        }
+
+        scoreDisplay.textContent = score;
+        streakDisplay.textContent = streak; 
+    }
+
+    function updateGame(timestamp) {
+        if (!isGameRunning || isGamePaused || isReferenceOpen) {
+            lastTime = timestamp;
+            dropInterval = requestAnimationFrame(updateGame);
+            return;
+        }
+
+        const deltaTime = (timestamp - lastTime) / 1000; 
+        lastTime = timestamp;
+        
+        const fallingCards = dropArea.querySelectorAll('.aa-card:not(.dragging)');
+
+        fallingCards.forEach(card => {
+            const currentY = parseFloat(card.style.top);
+            
+            const fallDistance = currentDropSpeed * deltaTime; 
+
+            card.style.top = `${currentY + fallDistance}px`;
+            
+            checkCardDrop(card);
+        });
+
+        dropInterval = requestAnimationFrame(updateGame);
+    }
+    
+    // --- Lógica de Drag and Drop (omitted for brevity, remains the same) ---
+
+    function getPointerPosition(e) {
+        if (e.touches && e.touches.length) {
+            return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+        return { x: e.clientX, y: e.clientY };
+    }
+
+    function startDrag(e) {
+        if (!isGameRunning || isGamePaused || isReferenceOpen) return;
+        // ... (resto de startDrag)
+        e.preventDefault(); 
+        
+        const card = e.currentTarget; 
+
+        if (dragState.isDragging) return;
+
+        const pos = getPointerPosition(e);
+        const rect = card.getBoundingClientRect();
+
+        dragState.isDragging = true;
+        dragState.card = card; 
+        dragState.offsetX = pos.x - rect.left;
+        dragState.offsetY = pos.y - rect.top;
+
+        card.classList.add('dragging');
+
+        card.style.position = 'fixed'; 
+        card.style.left = `${pos.x - dragState.offsetX}px`;
+        card.style.top = `${pos.y - dragState.offsetY}px`;
+
+        document.addEventListener('mousemove', onDrag);
+        document.addEventListener('touchmove', onDrag, { passive: false });
+        document.addEventListener('mouseup', endDrag);
+        document.addEventListener('touchend', endDrag);
+    }
+
+    function onDrag(e) {
+        if (!dragState.isDragging || !dragState.card) return;
+        e.preventDefault();
+
+        const card = dragState.card;
+        const pos = getPointerPosition(e);
+        
+        card.style.left = `${pos.x - dragState.offsetX}px`;
+        card.style.top = `${pos.y - dragState.offsetY}px`;
+    }
+
+    function endDrag() {
+        if (!dragState.isDragging || !dragState.card) return;
+
+        const card = dragState.card;
+        const targetBox = checkDropTarget(card);
+
+        card.classList.remove('dragging');
+        card.style.position = 'absolute'; 
+        
+        document.removeEventListener('mousemove', onDrag);
+        document.removeEventListener('touchmove', onDrag);
+        document.removeEventListener('mouseup', endDrag);
+        document.removeEventListener('touchend', endDrag);
+
+        if (targetBox) {
+            const correctCategory = card.getAttribute('data-category');
+            const droppedCategory = targetBox.getAttribute('data-category');
+            
+            if (correctCategory === droppedCategory) {
+                updateScore(true, `Clasificado`);
+                flashBox(targetBox, true);
+            } else {
+                updateScore(false, `Error. Era ${correctCategory}`);
+                flashBox(targetBox, false);
+            }
+            card.remove(); 
+
+        } else {
+            const dropAreaRect = dropArea.getBoundingClientRect();
+            const cardX = parseFloat(card.style.left) - dropAreaRect.left;
+            const cardY = parseFloat(card.style.top) - dropAreaRect.top;
+
+            card.style.left = `${cardX}px`;
+            card.style.top = `${cardY}px`;
+            
+            checkCardDrop(card);
+        }
+
+        dragState.isDragging = false;
+        dragState.card = null;
+    }
+
+    function checkDropTarget(card) {
+        const cardRect = card.getBoundingClientRect();
+        
+        for (const box of categoryBoxes) {
+            const boxRect = box.getBoundingClientRect();
+            
+            const isOverlapping = (
+                cardRect.left < boxRect.right &&
+                cardRect.right > boxRect.left &&
+                cardRect.top < boxRect.bottom &&
+                cardRect.bottom > boxRect.top
+            );
+
+            if (isOverlapping) {
+                return box; 
+            }
+        }
+        return null; 
+    }
+    
+    // --- Lógica de Control de Juego ---
+
+    function resetGame() {
+        score = 0;
+        timeLeft = GAME_DURATION;
+        streak = 0;
+        maxStreak = 0; 
+        isGameRunning = false;
+        isGamePaused = false;
+        lastSpawnPositionX = -1; 
+
+        currentDropSpeed = BASE_DROP_SPEED; 
+
+        scoreDisplay.textContent = '0';
+        timerDisplay.textContent = `${GAME_DURATION}s`;
+        streakDisplay.textContent = '0';
+        maxStreakDisplay.textContent = '0'; 
+        dropArea.innerHTML = '';
+        
+        overlayMainContent.style.display = 'flex'; 
+        overlay.style.display = 'flex';
+        
+        overlayTitle.textContent = 'Clasificador de Aminoácidos';
+        overlayMessage.innerHTML = 'Clasifica un único aminoácido a la vez arrastrándolo a la caja correcta. Ganas 1 punto por acierto, y 1 punto extra por cada múltiplo de 3 que alcances en tu <span class="font-bold text-pink-400">Racha Actual</span>. Pierdes 1 punto si fallas o se cae el aminoácido.';
+        startButton.textContent = '¡Comenzar Juego!';
+
+        difficultySelectionDiv.style.display = 'flex';
+        referenceButton.style.display = 'block'; // Asegura que el botón de referencia esté visible en el overlay
+        
+        pauseButton.style.display = 'none';
+        restartButton.style.display = 'none';
+        
+        if (gameInterval) clearInterval(gameInterval);
+        if (dropInterval) cancelAnimationFrame(dropInterval);
+        if (spawnerInterval) clearInterval(spawnerInterval); 
+    }
+    
+    function startGame() {
+        resetGame(); 
+
+        if (Tone.context.state !== 'running') {
+            Tone.start();
+        }
+        if (!successSynth) {
+            initAudio();
+        }
+
+        const selectedDifficulty = difficultySelect.value;
+        const speedMultiplier = DIFFICULTY_SETTINGS[selectedDifficulty];
+        
+        currentDropSpeed = BASE_DROP_SPEED * speedMultiplier;
+
+        isGameRunning = true;
+        overlay.style.display = 'none';
+        pauseButton.style.display = 'block';
+        restartButton.style.display = 'block';
+        
+        difficultySelectionDiv.style.display = 'none';
+        referenceButton.style.display = 'none'; // Esconder el botón de referencia durante el juego
+        
+        gameInterval = setInterval(() => {
+            if (!isGamePaused) {
+                timeLeft--;
+                timerDisplay.textContent = `${timeLeft}s`;
+
+                if (timeLeft <= 0) {
+                    endGame();
+                }
+            }
+        }, 1000);
+
+        spawnAminoAcid(); 
+        spawnerInterval = setInterval(() => {
+            if (!isGamePaused) {
+                spawnAminoAcid();
+            }
+        }, 2000); 
+        
+        lastTime = performance.now();
+        dropInterval = requestAnimationFrame(updateGame);
+    }
+    
+    function endGame() {
+        if (!isGameRunning) return;
+        
+        isGameRunning = false;
+        if (gameInterval) clearInterval(gameInterval);
+        if (dropInterval) cancelAnimationFrame(dropInterval);
+        if (spawnerInterval) clearInterval(spawnerInterval);
+
+        overlayTitle.textContent = '¡Juego Terminado!';
+        overlayMessage.innerHTML = `Tu puntuación final es: <span class="text-indigo-400 font-bold">${score}</span> puntos.<br>La racha máxima alcanzada fue de <span class="text-purple-400 font-bold">${maxStreak}</span> aciertos.`;
+        startButton.textContent = 'Jugar de Nuevo';
+        
+        overlayMainContent.style.display = 'flex';
+        overlay.style.display = 'flex';
+        
+        pauseButton.style.display = 'none';
+        difficultySelectionDiv.style.display = 'flex'; 
+        referenceButton.style.display = 'block'; // Mostrar el botón de referencia al terminar
+    }
+    
+    function togglePause() {
+        if (!isGameRunning) return;
+
+        isGamePaused = !isGamePaused;
+
+        if (isGamePaused) {
+            pauseButton.textContent = 'Reanudar';
+            overlayTitle.textContent = 'Juego Pausado';
+            overlayMessage.textContent = 'Haz clic en Reanudar para continuar la clasificación.';
+            startButton.textContent = 'Reanudar';
+            
+            overlayMainContent.style.display = 'flex';
+            overlay.style.display = 'flex';
+            
+            difficultySelectionDiv.style.display = 'none'; 
+            referenceButton.style.display = 'block'; 
+        } else {
+            pauseButton.textContent = 'Pausar';
+            overlay.style.display = 'none';
+            lastTime = performance.now(); 
+            if (!dropInterval) {
+                dropInterval = requestAnimationFrame(updateGame);
+            }
+        }
+    }
+    
+    // --- Lógica del Modal de Referencia ---
+    
+    function showReferenceModal() {
+        buildReferenceTable(); // Asegura que la tabla esté construida
+        isReferenceOpen = true;
+        
+        // Oculta el overlay principal y muestra el de referencia
+        overlay.style.display = 'none';
+        referenceOverlay.style.display = 'flex';
+        
+        // Si el juego estaba corriendo, lo pausa
+        if (isGameRunning && !isGamePaused) {
+            togglePause();
+        }
+    }
+    
+    function hideReferenceModal() {
+        isReferenceOpen = false;
+        referenceOverlay.style.display = 'none';
+        
+        // Muestra el overlay principal (menú o pausa)
+        overlay.style.display = 'flex';
+    }
+
+    // --- Inicialización de Eventos ---
+    
+    startButton.addEventListener('click', () => {
+        if (isGameRunning && isGamePaused) {
+            togglePause(); 
+        } else {
+            startGame(); 
+        }
+    });
+
+    pauseButton.addEventListener('click', togglePause);
+    restartButton.addEventListener('click', resetGame);
+    
+    referenceButton.addEventListener('click', showReferenceModal); // Abre el modal
+    closeReferenceButton.addEventListener('click', hideReferenceModal); // Cierra el modal
+    
+    // Inicialización del juego
+    resetGame(); 
+    
+</script>
+</body>
+</html>
